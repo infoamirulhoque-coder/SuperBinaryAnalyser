@@ -3,13 +3,12 @@ import React, {
   useContext,
   useState,
   useEffect,
-  useRef,
   useCallback,
   ReactNode,
 } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Signal } from '@/services/signalEngine';
-import { setApiKey, getApiKey } from '@/services/twelvedata';
+import { setApiKey, clearAllCaches } from '@/services/twelvedata';
 
 export const FOREX_PAIRS = [
   { symbol: 'EUR/USD', label: 'EUR/USD', group: 'Major' },
@@ -43,11 +42,13 @@ export interface AppState {
   isSignalRunning: boolean;
   lastSignal: Signal | null;
   isApiValid: boolean | null;
+  isWeekendLocked: boolean;
+  isLoading: boolean;
 }
 
 interface AppContextType extends AppState {
   unlock: (pin: string) => boolean;
-  setAppApiKey: (key: string) => void;
+  setAppApiKey: (key: string) => Promise<void>;
   togglePair: (symbol: string) => void;
   setActivePair: (symbol: string) => void;
   addSignal: (signal: Signal) => void;
@@ -55,30 +56,31 @@ interface AppContextType extends AppState {
   stopSignalEngine: () => void;
   clearSignals: () => void;
   setApiValid: (v: boolean | null) => void;
+  setWeekendLocked: (v: boolean) => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 const CORRECT_PIN = '707078';
 const STORAGE_KEYS = {
-  apiKey: 'sba_apikey',
-  selectedPairs: 'sba_pairs',
-  signals: 'sba_signals',
+  apiKey: 'sba_apikey_v2',
+  selectedPairs: 'sba_pairs_v2',
+  signals: 'sba_signals_v2',
 };
 
 export function AppProvider({ children }: { children: ReactNode }) {
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [apiKey, setApiKeyState] = useState('');
-  const [selectedPairs, setSelectedPairs] = useState<string[]>([
-    'EUR/USD', 'GBP/USD', 'USD/JPY',
-  ]);
+  const [selectedPairs, setSelectedPairs] = useState<string[]>(['EUR/USD', 'GBP/USD', 'USD/JPY']);
   const [activePair, setActivePairState] = useState('EUR/USD');
   const [signals, setSignals] = useState<Signal[]>([]);
   const [isSignalRunning, setIsSignalRunning] = useState(false);
   const [lastSignal, setLastSignal] = useState<Signal | null>(null);
   const [isApiValid, setApiValidState] = useState<boolean | null>(null);
+  const [isWeekendLocked, setIsWeekendLockedState] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
 
-  // Load persisted data
+  // Load persisted data on mount
   useEffect(() => {
     const load = async () => {
       try {
@@ -87,16 +89,24 @@ export function AppProvider({ children }: { children: ReactNode }) {
           AsyncStorage.getItem(STORAGE_KEYS.selectedPairs),
           AsyncStorage.getItem(STORAGE_KEYS.signals),
         ]);
-        if (savedKey) {
-          setApiKeyState(savedKey);
-          setApiKey(savedKey);
+        if (savedKey && savedKey.trim()) {
+          setApiKeyState(savedKey.trim());
+          setApiKey(savedKey.trim());
         }
-        if (savedPairs) setSelectedPairs(JSON.parse(savedPairs));
+        if (savedPairs) {
+          try { setSelectedPairs(JSON.parse(savedPairs)); } catch {}
+        }
         if (savedSignals) {
-          const parsed: Signal[] = JSON.parse(savedSignals);
-          setSignals(parsed.slice(-50));
+          try {
+            const parsed: Signal[] = JSON.parse(savedSignals);
+            if (Array.isArray(parsed)) setSignals(parsed.slice(0, 50));
+          } catch {}
         }
-      } catch {}
+      } catch {
+        // Ignore storage errors
+      } finally {
+        setIsLoading(false);
+      }
     };
     load();
   }, []);
@@ -110,16 +120,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const setAppApiKey = useCallback(async (key: string) => {
-    setApiKeyState(key);
-    setApiKey(key);
-    try { await AsyncStorage.setItem(STORAGE_KEYS.apiKey, key); } catch {}
+    const trimmed = key.trim();
+    setApiKeyState(trimmed);
+    setApiKey(trimmed);
+    try { await AsyncStorage.setItem(STORAGE_KEYS.apiKey, trimmed); } catch {}
   }, []);
 
-  const togglePair = useCallback(async (symbol: string) => {
+  const togglePair = useCallback((symbol: string) => {
     setSelectedPairs((prev) => {
       const next = prev.includes(symbol)
         ? prev.filter((p) => p !== symbol)
         : [...prev, symbol];
+      // Ensure at least 1 pair selected
+      if (next.length === 0) return prev;
       AsyncStorage.setItem(STORAGE_KEYS.selectedPairs, JSON.stringify(next)).catch(() => {});
       return next;
     });
@@ -129,7 +142,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setActivePairState(symbol);
   }, []);
 
-  const addSignal = useCallback(async (signal: Signal) => {
+  const addSignal = useCallback((signal: Signal) => {
     setSignals((prev) => {
       const next = [signal, ...prev].slice(0, 50);
       AsyncStorage.setItem(STORAGE_KEYS.signals, JSON.stringify(next)).catch(() => {});
@@ -144,31 +157,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const clearSignals = useCallback(async () => {
     setSignals([]);
     setLastSignal(null);
+    clearAllCaches();
     try { await AsyncStorage.removeItem(STORAGE_KEYS.signals); } catch {}
   }, []);
 
   const setApiValid = useCallback((v: boolean | null) => setApiValidState(v), []);
+  const setWeekendLocked = useCallback((v: boolean) => setIsWeekendLockedState(v), []);
 
   return (
     <AppContext.Provider
       value={{
-        isUnlocked,
-        apiKey,
-        selectedPairs,
-        activePair,
-        signals,
-        isSignalRunning,
-        lastSignal,
-        isApiValid,
-        unlock,
-        setAppApiKey,
-        togglePair,
-        setActivePair,
-        addSignal,
-        startSignalEngine,
-        stopSignalEngine,
-        clearSignals,
-        setApiValid,
+        isUnlocked, apiKey, selectedPairs, activePair,
+        signals, isSignalRunning, lastSignal, isApiValid,
+        isWeekendLocked, isLoading,
+        unlock, setAppApiKey, togglePair, setActivePair,
+        addSignal, startSignalEngine, stopSignalEngine,
+        clearSignals, setApiValid, setWeekendLocked,
       }}
     >
       {children}
