@@ -9,8 +9,14 @@ export default function RootLayout() {
     <AlertProvider>
       <SafeAreaProvider>
         <AppProvider>
-          <StatusBar style="light" backgroundColor="#050810" />
-          <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: '#050810' } }} />
+          <StatusBar style="light" backgroundColor="#050810" translucent={false} />
+          <Stack
+            screenOptions={{
+              headerShown: false,
+              contentStyle: { backgroundColor: '#050810' },
+              animation: 'fade',
+            }}
+          />
         </AppProvider>
       </SafeAreaProvider>
     </AlertProvider>

@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState } from 'react';
-import { View, Text, StyleSheet, Animated, Easing } from 'react-native';
+import { View, Text, StyleSheet, Animated, Easing, TouchableOpacity } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialIcons } from '@expo/vector-icons';
 import { Colors, Fonts, Spacing, Radius, Shadow } from '@/constants/theme';
@@ -12,115 +12,188 @@ interface SignalCardProps {
 
 export function SignalCard({ signal, isLatest = false }: SignalCardProps) {
   const fadeAnim = useRef(new Animated.Value(0)).current;
-  const slideAnim = useRef(new Animated.Value(-24)).current;
+  const slideAnim = useRef(new Animated.Value(-28)).current;
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const barAnim = useRef(new Animated.Value(0)).current;
-  const [countdown, setCountdown] = useState<number>(0);
+  const powerAnim = useRef(new Animated.Value(0)).current;
+  const [countdown, setCountdown] = useState(Math.max(0, Math.floor((signal.expiry - Date.now()) / 1000)));
+  const [expanded, setExpanded] = useState(false);
+  const expandAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     Animated.parallel([
-      Animated.timing(fadeAnim, { toValue: 1, duration: 450, useNativeDriver: true }),
+      Animated.timing(fadeAnim, { toValue: 1, duration: 400, useNativeDriver: true }),
       Animated.spring(slideAnim, { toValue: 0, tension: 90, friction: 11, useNativeDriver: true }),
-      Animated.timing(barAnim, { toValue: signal.confidence / 100, duration: 800, easing: Easing.out(Easing.cubic), useNativeDriver: false }),
+      Animated.timing(barAnim, { toValue: signal.confidence / 100, duration: 900, easing: Easing.out(Easing.cubic), useNativeDriver: false }),
+      Animated.timing(powerAnim, { toValue: signal.candlePower / 100, duration: 1000, easing: Easing.out(Easing.cubic), useNativeDriver: false }),
     ]).start();
 
     if (isLatest && signal.type !== 'WAIT') {
       Animated.loop(
         Animated.sequence([
-          Animated.timing(pulseAnim, { toValue: 1.025, duration: 700, useNativeDriver: true }),
-          Animated.timing(pulseAnim, { toValue: 1, duration: 700, useNativeDriver: true }),
+          Animated.timing(pulseAnim, { toValue: 1.02, duration: 800, useNativeDriver: true }),
+          Animated.timing(pulseAnim, { toValue: 1, duration: 800, useNativeDriver: true }),
         ])
       ).start();
     }
   }, []);
 
   useEffect(() => {
-    const iv = setInterval(() => {
-      setCountdown(Math.max(0, Math.floor((signal.expiry - Date.now()) / 1000)));
-    }, 1000);
+    const iv = setInterval(() => setCountdown(Math.max(0, Math.floor((signal.expiry - Date.now()) / 1000))), 1000);
     return () => clearInterval(iv);
   }, [signal.expiry]);
+
+  const toggleExpand = () => {
+    const toVal = expanded ? 0 : 1;
+    Animated.spring(expandAnim, { toValue: toVal, tension: 80, friction: 10, useNativeDriver: true }).start();
+    setExpanded(!expanded);
+  };
 
   const isBuy = signal.type === 'BUY';
   const isSell = signal.type === 'SELL';
   const signalColor = isBuy ? Colors.buy : isSell ? Colors.sell : Colors.wait;
   const gradColors: [string, string] = isBuy ? ['#00E676', '#00C853'] : isSell ? ['#FF3D57', '#D32F2F'] : ['#FFC107', '#FF8F00'];
-
   const barWidth = barAnim.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] });
+  const powerWidth = powerAnim.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] });
+
+  const qualityColor = signal.entryQuality === 'PERFECT' ? Colors.gold
+    : signal.entryQuality === 'GOOD' ? Colors.buy
+    : signal.entryQuality === 'FAIR' ? Colors.wait : Colors.textMuted;
+
+  const qualityIcon = signal.entryQuality === 'PERFECT' ? 'stars'
+    : signal.entryQuality === 'GOOD' ? 'verified'
+    : signal.entryQuality === 'FAIR' ? 'check-circle'
+    : 'radio-button-unchecked';
 
   const formatTime = (ts: number) => {
     const d = new Date(ts);
-    return `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}:${d.getSeconds().toString().padStart(2, '0')}`;
+    return `${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')}:${d.getSeconds().toString().padStart(2,'0')}`;
   };
 
   const ind = signal.indicators;
 
+  const expandDetails = expandAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 1] });
+
   return (
-    <Animated.View
-      style={[
-        styles.container,
-        isLatest && !signal.manipulationWarning && (isBuy ? Shadow.buy : isSell ? Shadow.sell : {}),
-        { opacity: fadeAnim, transform: [{ translateY: slideAnim }, { scale: isLatest ? pulseAnim : 1 }] },
-      ]}
-    >
+    <Animated.View style={[
+      styles.container,
+      isLatest && !signal.manipulationWarning && (isBuy ? Shadow.buy : isSell ? Shadow.sell : {}),
+      { opacity: fadeAnim, transform: [{ translateY: slideAnim }, { scale: isLatest ? pulseAnim : 1 }] },
+    ]}>
       <LinearGradient
         colors={[Colors.bgElevated, Colors.bgCard]}
-        style={[styles.card, { borderColor: `${signal.manipulationWarning ? Colors.wait : signalColor}35` }]}
+        style={[styles.card, { borderColor: `${signal.manipulationWarning ? Colors.wait : signalColor}30` }]}
       >
-        {/* Manipulation Warning Banner */}
+        {/* Manipulation Warning */}
         {signal.manipulationWarning && (
           <View style={styles.manipBanner}>
-            <MaterialIcons name="warning" size={13} color={Colors.wait} />
+            <MaterialIcons name="warning" size={12} color={Colors.wait} />
             <Text style={styles.manipText} numberOfLines={2}>{signal.manipulationReason}</Text>
           </View>
         )}
 
-        {/* Header */}
+        {/* Header row */}
         <View style={styles.header}>
           <View style={styles.pairBlock}>
             <Text style={styles.pairText}>{signal.pair}</Text>
             <Text style={styles.timeText}>{formatTime(signal.timestamp)}</Text>
-            <Text style={styles.sessionText}>📍 {signal.session}</Text>
+            <View style={styles.sessionRow}>
+              <MaterialIcons name="place" size={9} color={Colors.blue} />
+              <Text style={styles.sessionText}>{signal.session}</Text>
+            </View>
           </View>
 
           <View style={styles.rightBlock}>
             <LinearGradient colors={gradColors} style={styles.signalBadge}>
               <MaterialIcons
                 name={isBuy ? 'trending-up' : isSell ? 'trending-down' : 'trending-flat'}
-                size={18} color="#fff"
+                size={16} color="#fff"
               />
               <Text style={styles.signalText}>{signal.type}</Text>
             </LinearGradient>
-            {signal.safeSignal && (
-              <View style={styles.safeBadge}>
-                <MaterialIcons name="verified" size={10} color={Colors.buy} />
-                <Text style={styles.safeText}>SAFE</Text>
+
+            <View style={styles.badges}>
+              {signal.safeSignal && (
+                <View style={styles.safeBadge}>
+                  <MaterialIcons name="verified" size={9} color={Colors.buy} />
+                  <Text style={styles.safeTxt}>SAFE</Text>
+                </View>
+              )}
+              {signal.confirmation5s && (
+                <View style={styles.confirm5sBadge}>
+                  <MaterialIcons name="check" size={9} color={Colors.blue} />
+                  <Text style={styles.confirm5sTxt}>5s✓</Text>
+                </View>
+              )}
+              <View style={[styles.qualityBadge, { backgroundColor: `${qualityColor}18`, borderColor: `${qualityColor}40` }]}>
+                <MaterialIcons name={qualityIcon as any} size={9} color={qualityColor} />
+                <Text style={[styles.qualityTxt, { color: qualityColor }]}>{signal.entryQuality}</Text>
               </View>
-            )}
+            </View>
           </View>
         </View>
 
         {/* Confidence bar */}
         <View style={styles.confRow}>
           <Text style={styles.confLabel}>Signal Confidence</Text>
-          <Text style={[styles.confPct, { color: signalColor }]}>{signal.confidence}%</Text>
+          <View style={styles.confRight}>
+            <Text style={[styles.strengthBadge, {
+              color: signal.strength === 'STRONG' ? Colors.gold : signal.strength === 'MEDIUM' ? Colors.blue : Colors.textMuted,
+            }]}>{signal.strength}</Text>
+            <Text style={[styles.confPct, { color: signalColor }]}>{signal.confidence}%</Text>
+          </View>
         </View>
         <View style={styles.confBarBg}>
           <Animated.View style={[styles.confBarFill, { width: barWidth as any, backgroundColor: signalColor }]} />
         </View>
 
-        {/* ADX + Volume row */}
+        {/* Candle Power bar */}
+        <View style={styles.confRow}>
+          <Text style={styles.confLabel}>Candle Power</Text>
+          <Text style={[styles.confPct, { color: signal.candlePower > 65 ? signalColor : Colors.textMuted }]}>
+            {signal.candlePower}%
+          </Text>
+        </View>
+        <View style={styles.confBarBg}>
+          <Animated.View style={[styles.confBarFill, { width: powerWidth as any, backgroundColor: `${signalColor}80` }]} />
+        </View>
+
+        {/* Key market data row */}
+        <View style={styles.marketRow}>
+          <MarketPill
+            label="Liquidity"
+            value={signal.liquidityZone}
+            color={signal.liquidityZone === 'HIGH' ? Colors.buy : signal.liquidityZone === 'MEDIUM' ? Colors.gold : Colors.textMuted}
+          />
+          <MarketPill
+            label="Trend"
+            value={signal.trendDirection}
+            color={signal.trendDirection === 'UP' ? Colors.buy : signal.trendDirection === 'DOWN' ? Colors.sell : Colors.wait}
+          />
+          <MarketPill
+            label="Fib"
+            value={signal.fibLevel.replace('Fib ', '')}
+            color={Colors.purple}
+          />
+          <MarketPill
+            label="Session+"
+            value={`+${signal.sessionScore}`}
+            color={signal.sessionScore >= 25 ? Colors.gold : Colors.textSecondary}
+          />
+        </View>
+
+        {/* ADX + ATR row */}
         <View style={styles.metaRow}>
           <View style={styles.metaItem}>
             <Text style={styles.metaLabel}>ADX</Text>
             <Text style={[styles.metaValue, { color: ind.adxTrend === 'TRENDING' ? Colors.buy : Colors.wait }]}>
-              {ind.adx.toFixed(1)} {ind.adxTrend === 'TRENDING' ? '↑TREND' : '~RANGE'}
+              {ind.adx.toFixed(1)} {ind.adxMomentum === 'RISING' ? '↑' : '↓'}
             </Text>
           </View>
           <View style={styles.metaItem}>
-            <Text style={styles.metaLabel}>ATR</Text>
+            <Text style={styles.metaLabel}>ATR%</Text>
             <Text style={[styles.metaValue, { color: ind.atrNormal ? Colors.textSecondary : Colors.sell }]}>
-              {ind.atr.toFixed(5)}
+              {ind.atrPercentile}P
             </Text>
           </View>
           <View style={styles.metaItem}>
@@ -128,41 +201,75 @@ export function SignalCard({ signal, isLatest = false }: SignalCardProps) {
             <Text style={styles.metaValue}>{(ind.bbWidth * 100).toFixed(3)}%</Text>
           </View>
           <View style={styles.metaItem}>
-            <Text style={styles.metaLabel}>Vol</Text>
-            <Text style={[styles.metaValue, { color: ind.volumeSpike ? Colors.sell : ind.volumeConfirmation ? Colors.buy : Colors.textMuted }]}>
-              {ind.volumeSpike ? '⚡SPIKE' : ind.volumeConfirmation ? '✓OK' : '—'}
+            <Text style={styles.metaLabel}>Vol Ratio</Text>
+            <Text style={[styles.metaValue, {
+              color: ind.volumeSpike ? Colors.sell : ind.volumeConfirmation ? Colors.buy : Colors.textMuted
+            }]}>
+              {ind.volumeRatio.toFixed(2)}x
+            </Text>
+          </View>
+          <View style={styles.metaItem}>
+            <Text style={styles.metaLabel}>Mom.</Text>
+            <Text style={[styles.metaValue, { color: ind.momentumScore > 60 ? signalColor : Colors.textMuted }]}>
+              {ind.momentumScore}
             </Text>
           </View>
         </View>
 
         {/* Indicator pills */}
         <View style={styles.indicatorsGrid}>
-          <IndicatorPill label="RSI" value={ind.rsi.toFixed(1)} signal={ind.rsiSignal} />
-          <IndicatorPill label="MACD" value={ind.macdHistogram >= 0 ? `+${ind.macdHistogram.toFixed(5)}` : ind.macdHistogram.toFixed(5)} signal={ind.macdDirection} />
-          <IndicatorPill label="EMA" value={ind.ema5 > ind.ema20 ? '5>20↑' : '5<20↓'} signal={ind.emaCross} />
-          <IndicatorPill label="BB" value={ind.bbPosition} signal={ind.bbSignal} />
-          <IndicatorPill label="STOCH" value={`K${ind.stochK.toFixed(0)}`} signal={ind.stochSignal} />
+          <IndicatorPill label="RSI" value={`${ind.rsi.toFixed(1)}${ind.rsiDivergence ? '⚡' : ''}`} signal={ind.rsiSignal} />
+          <IndicatorPill label="MACD" value={`${ind.macdCrossover ? '✕' : ''}${ind.macdHistogram >= 0 ? '+' : ''}${ind.macdHistogram.toFixed(5)}`} signal={ind.macdDirection} />
+          <IndicatorPill label="EMA" value={ind.emaAlignment ? 'ALIGNED' : (ind.ema5 > ind.ema20 ? '↑' : '↓')} signal={ind.emaCross} />
+          <IndicatorPill label="BB" value={ind.bbSqueeze ? 'SQUEEZE' : ind.bbPosition} signal={ind.bbSignal} />
+          <IndicatorPill label="STOCH" value={`K${ind.stochK.toFixed(0)}${ind.stochCross ? '✕' : ''}`} signal={ind.stochSignal} />
           <IndicatorPill label="CANDLE" value={ind.candlePattern} signal={ind.candleSignal} />
+          <IndicatorPill
+            label="S/R"
+            value={ind.nearKeyLevel ? ind.levelType : 'NONE'}
+            signal={ind.nearKeyLevel ? (ind.levelType === 'SUPPORT' ? 'BUY' : 'SELL') : 'WAIT'}
+          />
+          <IndicatorPill
+            label="Diverge"
+            value={ind.rsiDivergence ? 'YES' : 'NO'}
+            signal={ind.rsiDivergence ? (ind.rsi < 50 ? 'BUY' : 'SELL') : 'WAIT'}
+          />
+        </View>
+
+        {/* S/R + Pivot row */}
+        <View style={styles.levelRow}>
+          <View style={styles.levelItem}>
+            <Text style={styles.levelLabel}>Pivot</Text>
+            <Text style={styles.levelVal}>{signal.pivotPoint.toFixed(5)}</Text>
+          </View>
+          <View style={styles.levelItem}>
+            <Text style={[styles.levelLabel, { color: Colors.sell }]}>Resist.</Text>
+            <Text style={[styles.levelVal, { color: Colors.sell }]}>{signal.resistance1.toFixed(5)}</Text>
+          </View>
+          <View style={styles.levelItem}>
+            <Text style={[styles.levelLabel, { color: Colors.buy }]}>Support</Text>
+            <Text style={[styles.levelVal, { color: Colors.buy }]}>{signal.support1.toFixed(5)}</Text>
+          </View>
+          <View style={styles.levelItem}>
+            <Text style={styles.levelLabel}>Entry</Text>
+            <Text style={styles.levelVal}>{signal.entry.toFixed(5)}</Text>
+          </View>
         </View>
 
         {/* Footer */}
         <View style={styles.footer}>
-          <FooterItem label="Entry" value={signal.entry.toFixed(5)} />
           <FooterItem
-            label="Strength"
-            value={signal.strength}
-            valueColor={signal.strength === 'STRONG' ? Colors.buy : signal.strength === 'MEDIUM' ? Colors.gold : Colors.textSecondary}
-          />
-          <FooterItem
-            label="Expires"
+            label="Expiry"
             value={countdown > 0 ? `${countdown}s` : 'EXPIRED'}
-            valueColor={countdown > 30 ? Colors.buy : countdown > 0 ? Colors.wait : Colors.sell}
+            color={countdown > 30 ? Colors.buy : countdown > 0 ? Colors.wait : Colors.sell}
           />
-          <FooterItem
-            label="Session +"
-            value={`+${signal.sessionScore}`}
-            valueColor={signal.sessionScore >= 20 ? Colors.gold : Colors.textSecondary}
+          <FooterItem label="Strength" value={signal.strength}
+            color={signal.strength === 'STRONG' ? Colors.gold : signal.strength === 'MEDIUM' ? Colors.blue : Colors.textMuted}
           />
+          <FooterItem label="Quality" value={signal.entryQuality ?? 'FAIR'} color={qualityColor} />
+          <FooterItem label="Pattern" value={ind.candlePattern} color={
+            ind.candleSignal === 'BUY' ? Colors.buy : ind.candleSignal === 'SELL' ? Colors.sell : Colors.textMuted
+          } />
         </View>
       </LinearGradient>
     </Animated.View>
@@ -171,7 +278,7 @@ export function SignalCard({ signal, isLatest = false }: SignalCardProps) {
 
 function IndicatorPill({ label, value, signal }: { label: string; value: string; signal: string }) {
   const color = signal === 'BUY' ? Colors.buy : signal === 'SELL' ? Colors.sell : Colors.textMuted;
-  const bg = signal === 'BUY' ? `${Colors.buy}15` : signal === 'SELL' ? `${Colors.sell}15` : 'transparent';
+  const bg = signal === 'BUY' ? `${Colors.buy}12` : signal === 'SELL' ? `${Colors.sell}12` : 'transparent';
   return (
     <View style={[styles.pill, { backgroundColor: bg, borderColor: `${color}35` }]}>
       <Text style={styles.pillLabel}>{label}</Text>
@@ -180,65 +287,104 @@ function IndicatorPill({ label, value, signal }: { label: string; value: string;
   );
 }
 
-function FooterItem({ label, value, valueColor }: { label: string; value: string; valueColor?: string }) {
+function MarketPill({ label, value, color }: { label: string; value: string; color: string }) {
+  return (
+    <View style={[styles.marketPill, { borderColor: `${color}30`, backgroundColor: `${color}08` }]}>
+      <Text style={styles.marketPillLabel}>{label}</Text>
+      <Text style={[styles.marketPillValue, { color }]}>{value}</Text>
+    </View>
+  );
+}
+
+function FooterItem({ label, value, color }: { label: string; value: string; color?: string }) {
   return (
     <View style={styles.footerItem}>
       <Text style={styles.footerLabel}>{label}</Text>
-      <Text style={[styles.footerValue, valueColor ? { color: valueColor } : {}]}>{value}</Text>
+      <Text style={[styles.footerValue, color ? { color } : {}]} numberOfLines={1}>{value}</Text>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { marginBottom: Spacing.sm },
-  card: { borderRadius: Radius.xl, padding: Spacing.base, borderWidth: 1, gap: Spacing.sm },
+  card: { borderRadius: Radius.xl, padding: Spacing.md, borderWidth: 1, gap: Spacing.xs },
   manipBanner: {
     flexDirection: 'row', alignItems: 'flex-start', gap: 6,
-    backgroundColor: `${Colors.wait}18`, borderRadius: Radius.sm,
-    padding: Spacing.sm, borderWidth: 1, borderColor: `${Colors.wait}40`,
+    backgroundColor: `${Colors.wait}15`, borderRadius: Radius.sm,
+    padding: Spacing.xs, borderWidth: 1, borderColor: `${Colors.wait}35`,
   },
   manipText: { fontSize: Fonts.sizes.xs, color: Colors.wait, flex: 1, lineHeight: 16 },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
-  pairBlock: { gap: 2 },
+  pairBlock: { gap: 2, flex: 1 },
   pairText: { fontSize: Fonts.sizes.lg, color: Colors.textPrimary, fontWeight: Fonts.weights.bold },
   timeText: { fontSize: Fonts.sizes.xs, color: Colors.textMuted },
+  sessionRow: { flexDirection: 'row', alignItems: 'center', gap: 3 },
   sessionText: { fontSize: Fonts.sizes.xs, color: Colors.blue },
-  rightBlock: { alignItems: 'flex-end', gap: 4 },
+  rightBlock: { alignItems: 'flex-end', gap: 5 },
   signalBadge: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
     paddingHorizontal: Spacing.md, paddingVertical: Spacing.xs,
     borderRadius: Radius.full,
   },
   signalText: { fontSize: Fonts.sizes.md, color: '#fff', fontWeight: Fonts.weights.black, letterSpacing: 1 },
+  badges: { flexDirection: 'row', gap: 4, flexWrap: 'wrap', justifyContent: 'flex-end' },
   safeBadge: {
-    flexDirection: 'row', alignItems: 'center', gap: 3,
-    backgroundColor: `${Colors.buy}18`, borderRadius: 4,
-    paddingHorizontal: 6, paddingVertical: 2,
+    flexDirection: 'row', alignItems: 'center', gap: 2,
+    backgroundColor: `${Colors.buy}15`, borderRadius: 4,
+    paddingHorizontal: 5, paddingVertical: 2,
     borderWidth: 1, borderColor: `${Colors.buy}30`,
   },
-  safeText: { fontSize: 8, color: Colors.buy, fontWeight: Fonts.weights.black },
-  confRow: { flexDirection: 'row', justifyContent: 'space-between' },
+  safeTxt: { fontSize: 8, color: Colors.buy, fontWeight: Fonts.weights.black },
+  confirm5sBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 2,
+    backgroundColor: `${Colors.blue}15`, borderRadius: 4,
+    paddingHorizontal: 5, paddingVertical: 2,
+    borderWidth: 1, borderColor: `${Colors.blue}30`,
+  },
+  confirm5sTxt: { fontSize: 8, color: Colors.blue, fontWeight: Fonts.weights.black },
+  qualityBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 2,
+    borderRadius: 4, paddingHorizontal: 5, paddingVertical: 2, borderWidth: 1,
+  },
+  qualityTxt: { fontSize: 8, fontWeight: Fonts.weights.black },
+  confRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  confRight: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   confLabel: { fontSize: Fonts.sizes.xs, color: Colors.textMuted },
   confPct: { fontSize: Fonts.sizes.xs, fontWeight: Fonts.weights.bold },
-  confBarBg: { height: 5, backgroundColor: Colors.bgInput, borderRadius: 3, overflow: 'hidden' },
-  confBarFill: { height: '100%', borderRadius: 3 },
-  metaRow: { flexDirection: 'row', gap: Spacing.xs, paddingVertical: 2 },
+  strengthBadge: { fontSize: 8, fontWeight: Fonts.weights.black },
+  confBarBg: { height: 4, backgroundColor: Colors.bgInput, borderRadius: 2, overflow: 'hidden' },
+  confBarFill: { height: '100%', borderRadius: 2 },
+  marketRow: { flexDirection: 'row', gap: Spacing.xs },
+  marketPill: {
+    flex: 1, alignItems: 'center', paddingVertical: Spacing.xs,
+    borderRadius: Radius.sm, borderWidth: 1,
+  },
+  marketPillLabel: { fontSize: 7, color: Colors.textMuted, fontWeight: Fonts.weights.bold },
+  marketPillValue: { fontSize: 9, fontWeight: Fonts.weights.black },
+  metaRow: { flexDirection: 'row', gap: Spacing.xs },
   metaItem: { flex: 1, alignItems: 'center' },
-  metaLabel: { fontSize: 8, color: Colors.textMuted, fontWeight: Fonts.weights.bold },
+  metaLabel: { fontSize: 7, color: Colors.textMuted, fontWeight: Fonts.weights.bold },
   metaValue: { fontSize: 8, color: Colors.textSecondary, fontWeight: Fonts.weights.semibold, textAlign: 'center' },
-  indicatorsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 5 },
+  indicatorsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 4 },
   pill: {
     borderWidth: 1, borderRadius: Radius.sm,
-    paddingHorizontal: 7, paddingVertical: 4,
-    alignItems: 'center', minWidth: 54, maxWidth: 90,
+    paddingHorizontal: 6, paddingVertical: 3,
+    alignItems: 'center', minWidth: 50, maxWidth: 100,
   },
-  pillLabel: { fontSize: 8, color: Colors.textMuted, fontWeight: Fonts.weights.bold, letterSpacing: 0.5 },
+  pillLabel: { fontSize: 7, color: Colors.textMuted, fontWeight: Fonts.weights.bold, letterSpacing: 0.3 },
   pillValue: { fontSize: 8, fontWeight: Fonts.weights.bold },
+  levelRow: {
+    flexDirection: 'row', justifyContent: 'space-between',
+    backgroundColor: Colors.bgInput, borderRadius: Radius.sm, padding: Spacing.sm,
+  },
+  levelItem: { alignItems: 'center', flex: 1 },
+  levelLabel: { fontSize: 7, color: Colors.textMuted, fontWeight: Fonts.weights.bold },
+  levelVal: { fontSize: 8, color: Colors.textSecondary, fontWeight: Fonts.weights.semibold, fontFamily: 'monospace' },
   footer: {
     flexDirection: 'row', justifyContent: 'space-between',
     paddingTop: Spacing.xs, borderTopWidth: 1, borderTopColor: Colors.border,
   },
-  footerItem: { alignItems: 'center', gap: 2 },
-  footerLabel: { fontSize: Fonts.sizes.xs, color: Colors.textMuted },
-  footerValue: { fontSize: Fonts.sizes.sm, color: Colors.textPrimary, fontWeight: Fonts.weights.semibold },
+  footerItem: { alignItems: 'center', gap: 2, flex: 1 },
+  footerLabel: { fontSize: 7, color: Colors.textMuted },
+  footerValue: { fontSize: Fonts.sizes.xs, color: Colors.textPrimary, fontWeight: Fonts.weights.semibold },
 });

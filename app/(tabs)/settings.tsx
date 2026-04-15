@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  TextInput, Animated, Easing, Keyboard,
+  TextInput, Animated, Keyboard,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -20,11 +20,11 @@ export default function SettingsScreen() {
   const [isValidating, setIsValidating] = useState(false);
   const [showKey, setShowKey] = useState(false);
   const fadeAnim = useRef(new Animated.Value(0)).current;
-  const cardSlide = useRef(new Animated.Value(20)).current;
+  const cardSlide = useRef(new Animated.Value(18)).current;
 
   useEffect(() => {
     Animated.parallel([
-      Animated.timing(fadeAnim, { toValue: 1, duration: 600, useNativeDriver: true }),
+      Animated.timing(fadeAnim, { toValue: 1, duration: 500, useNativeDriver: true }),
       Animated.spring(cardSlide, { toValue: 0, tension: 60, friction: 10, useNativeDriver: true }),
     ]).start();
     setKeyInput(apiKey);
@@ -33,44 +33,36 @@ export default function SettingsScreen() {
   const handleSaveKey = async () => {
     Keyboard.dismiss();
     const trimmed = keyInput.trim();
-    if (!trimmed) {
-      showAlert('Error', 'Please enter a valid API key');
-      return;
-    }
+    if (!trimmed) { showAlert('Error', 'Please enter a valid API key'); return; }
     setIsValidating(true);
     try {
       const valid = await validateApiKey(trimmed);
       setApiValid(valid);
       await setAppApiKey(trimmed);
       clearAllCaches();
-      if (valid) {
-        showAlert('Success', 'API key saved and validated. Live signals are now active.');
-      } else {
-        showAlert('Saved', 'API key saved. Validation could not confirm — check the key if signals fail.');
-      }
+      showAlert(valid ? 'Success ✓' : 'Saved', valid
+        ? 'API key validated. Live signals are now active.'
+        : 'Key saved. Validation inconclusive — check key if signals fail.');
     } catch {
       await setAppApiKey(trimmed);
       setApiValid(null);
-      showAlert('Saved', 'API key saved. Network issue prevented validation.');
-    } finally {
-      setIsValidating(false);
-    }
+      showAlert('Saved', 'Key saved. Network prevented validation.');
+    } finally { setIsValidating(false); }
   };
 
   const handleClearAll = () => {
     showAlert('Reset App Data', 'Clear all signals and caches?', [
       { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Reset', style: 'destructive', onPress: async () => {
-          await clearSignals();
-          clearAllCaches();
-          showAlert('Done', 'All data cleared successfully');
-        }
-      },
+      { text: 'Reset', style: 'destructive', onPress: async () => {
+        await clearSignals(); clearAllCaches();
+        showAlert('Done', 'All data cleared.');
+      }},
     ]);
   };
 
-  const displayKey = showKey ? keyInput : (keyInput.length > 8 ? keyInput.slice(0, 4) + '••••' + keyInput.slice(-4) : '••••••••');
+  const maskedKey = keyInput.length > 8
+    ? keyInput.slice(0, 4) + '••••••••' + keyInput.slice(-4)
+    : '••••••••';
 
   return (
     <Animated.View style={[styles.container, { paddingTop: insets.top, opacity: fadeAnim }]}>
@@ -81,97 +73,79 @@ export default function SettingsScreen() {
           <MaterialIcons name="settings" size={20} color={Colors.gold} />
           <Text style={styles.headerTitle}>Settings</Text>
           {isApiValid === true && (
-            <View style={styles.apiActiveBadge}>
-              <MaterialIcons name="wifi" size={12} color={Colors.buy} />
-              <Text style={styles.apiActiveTxt}>LIVE</Text>
+            <View style={styles.liveChip}>
+              <View style={styles.liveDot} />
+              <Text style={styles.liveTxt}>API LIVE</Text>
             </View>
           )}
         </LinearGradient>
 
-        {/* Logo */}
         <View style={styles.logoSection}>
           <AnimatedLogo size={72} showTitle showOwner />
         </View>
 
-        {/* API Key section */}
+        {/* API Key */}
         <Animated.View style={{ transform: [{ translateY: cardSlide }] }}>
           <LinearGradient colors={['#111827', '#0d1117']} style={styles.card}>
             <View style={styles.cardHeader}>
               <MaterialIcons name="vpn-key" size={18} color={Colors.gold} />
-              <Text style={styles.cardTitle}>Market Data API</Text>
-              {isApiValid === true && (
-                <View style={styles.validBadge}>
-                  <MaterialIcons name="check-circle" size={12} color={Colors.buy} />
-                  <Text style={styles.validText}>Active</Text>
-                </View>
-              )}
-              {isApiValid === false && (
-                <View style={[styles.validBadge, { backgroundColor: `${Colors.sell}18` }]}>
-                  <MaterialIcons name="error" size={12} color={Colors.sell} />
-                  <Text style={[styles.validText, { color: Colors.sell }]}>Invalid</Text>
-                </View>
-              )}
+              <Text style={styles.cardTitle}>Market Data API Key</Text>
+              {isApiValid === true && <ValidBadge ok />}
+              {isApiValid === false && <ValidBadge ok={false} />}
             </View>
-
             <Text style={styles.cardDesc}>
-              Enter your API key to fetch real-time 1-min candle data. The engine caches data for 55 seconds to minimize credit usage.
+              Required for live 1-min signals. Data cached 55s to save credits. Provider info is hidden for security.
             </Text>
-
             <View style={styles.keyInputRow}>
               <TextInput
                 style={styles.keyInput}
-                value={showKey ? keyInput : displayKey}
-                onChangeText={(t) => { setShowKey(true); setKeyInput(t); }}
+                value={showKey ? keyInput : (keyInput.length > 0 ? maskedKey : '')}
+                onChangeText={t => { setShowKey(true); setKeyInput(t); }}
                 onFocus={() => setShowKey(true)}
-                placeholder="Paste your API key here..."
+                onBlur={() => setShowKey(false)}
+                placeholder="Paste API key here..."
                 placeholderTextColor={Colors.textMuted}
-                autoCapitalize="none"
-                autoCorrect={false}
+                autoCapitalize="none" autoCorrect={false}
               />
-              <TouchableOpacity onPress={() => setShowKey((s) => !s)} style={styles.eyeBtn}>
-                <MaterialIcons name={showKey ? 'visibility-off' : 'visibility'} size={20} color={Colors.textMuted} />
+              <TouchableOpacity onPress={() => setShowKey(s => !s)} style={styles.eyeBtn}>
+                <MaterialIcons name={showKey ? 'visibility-off' : 'visibility'} size={18} color={Colors.textMuted} />
               </TouchableOpacity>
             </View>
-
-            <TouchableOpacity
-              style={[styles.saveBtn, isValidating && { opacity: 0.65 }]}
-              onPress={handleSaveKey}
-              disabled={isValidating}
-              activeOpacity={0.85}
-            >
+            <TouchableOpacity style={[styles.saveBtn, isValidating && { opacity: 0.6 }]}
+              onPress={handleSaveKey} disabled={isValidating} activeOpacity={0.85}>
               <LinearGradient colors={[Colors.gold, Colors.goldDark]} style={styles.saveBtnGrad}>
-                <MaterialIcons name={isValidating ? 'hourglass-empty' : 'save'} size={18} color={Colors.bg} />
+                <MaterialIcons name={isValidating ? 'hourglass-empty' : 'save'} size={16} color={Colors.bg} />
                 <Text style={styles.saveBtnText}>{isValidating ? 'Validating...' : 'Save & Validate'}</Text>
               </LinearGradient>
             </TouchableOpacity>
-
             <View style={styles.creditNote}>
-              <MaterialIcons name="savings" size={13} color={Colors.blue} />
-              <Text style={styles.creditNoteText}>
-                Credit-optimized: 55s cache · 80 candles (not 100) · Staggered pair calls · No redundant validation
-              </Text>
+              <MaterialIcons name="savings" size={12} color={Colors.blue} />
+              <Text style={styles.creditTxt}>Credit-optimized: 55s cache · 80 candles · Staggered calls · No waste</Text>
             </View>
           </LinearGradient>
         </Animated.View>
 
-        {/* Engine Info */}
+        {/* Engine Info v3 */}
         <LinearGradient colors={['#111827', '#0d1117']} style={styles.card}>
           <View style={styles.cardHeader}>
-            <MaterialIcons name="tune" size={18} color={Colors.blue} />
-            <Text style={styles.cardTitle}>Signal Engine v2.0</Text>
+            <MaterialIcons name="psychology" size={18} color={Colors.blue} />
+            <Text style={styles.cardTitle}>Signal Engine v3.0</Text>
+            <View style={styles.v3Badge}><Text style={styles.v3Txt}>v3.0</Text></View>
           </View>
           {[
-            ['Update Interval', '62 seconds (offset to avoid rate limits)'],
-            ['Indicators', 'RSI · MACD · EMA(5/20/50) · BB · Stoch · ADX · ATR · Candles'],
-            ['Candle Depth', '80 candles per pair (cache-optimized)'],
-            ['Manipulation Guard', 'Spike · Pinbar · Absorption · Pump/Dump · Gap'],
-            ['Session Boost', 'London+NY overlap → highest accuracy window'],
-            ['Weekend Lock', 'Auto-locks Sat 00:00–Sun 21:00 UTC'],
-            ['Safe Signal', 'No manipulation + normal ATR + no vol spike'],
-          ].map(([label, value]) => (
+            ['Interval', '62s (rate-limit safe)'],
+            ['Indicators', 'RSI·MACD·EMA(5/20/50/200)·BB·Stoch·ADX·ATR·Candles'],
+            ['New v3', 'Pivot·Fibonacci·S/R·Liquidity·CandlePower·5s Confirm'],
+            ['Candle Patterns', '18 patterns (Marubozu·Engulf·Star·Hammer·Tweezer...)'],
+            ['Manip. Guard', 'Spike·Pinbar·Absorption·Pump/Dump·Gap detection'],
+            ['Entry Quality', 'PERFECT / GOOD / FAIR / POOR scoring'],
+            ['Session Bonus', 'London+NY overlap = highest score (+30)'],
+            ['Weekend Lock', 'Auto-locks Sat 00:00 – Sun 21:00 UTC'],
+            ['Pairs', '40+ pairs (Major · Cross · Exotic · Crypto)'],
+          ].map(([label, val]) => (
             <View key={label} style={styles.configRow}>
               <Text style={styles.configLabel}>{label}</Text>
-              <Text style={styles.configValue}>{value}</Text>
+              <Text style={styles.configVal}>{val}</Text>
             </View>
           ))}
         </LinearGradient>
@@ -182,22 +156,27 @@ export default function SettingsScreen() {
             <MaterialIcons name="currency-exchange" size={18} color={Colors.purple} />
             <Text style={styles.cardTitle}>Selected Pairs ({selectedPairs.length})</Text>
           </View>
-          <View style={styles.pairsList}>
-            {FOREX_PAIRS.map((pair) => {
-              const isSelected = selectedPairs.includes(pair.symbol);
-              return (
-                <TouchableOpacity
-                  key={pair.symbol}
-                  style={[styles.pairItem, isSelected && styles.pairItemOn]}
-                  onPress={() => togglePair(pair.symbol)}
-                  activeOpacity={0.8}
-                >
-                  <Text style={[styles.pairItemText, isSelected && styles.pairItemTextOn]}>{pair.label}</Text>
-                  {isSelected && <MaterialIcons name="check" size={11} color={Colors.bg} />}
-                </TouchableOpacity>
-              );
-            })}
-          </View>
+          {['Major', 'Cross', 'Exotic', 'Crypto'].map(group => (
+            <View key={group} style={styles.pairGroup}>
+              <Text style={styles.pairGroupTitle}>{group}</Text>
+              <View style={styles.pairsList}>
+                {FOREX_PAIRS.filter(p => p.group === group).map(pair => {
+                  const isSelected = selectedPairs.includes(pair.symbol);
+                  return (
+                    <TouchableOpacity
+                      key={pair.symbol}
+                      style={[styles.pairItem, isSelected && styles.pairItemOn]}
+                      onPress={() => togglePair(pair.symbol)} activeOpacity={0.8}
+                    >
+                      {isSelected && <LinearGradient colors={[Colors.gold, Colors.goldDark]} style={StyleSheet.absoluteFill} borderRadius={Radius.full} />}
+                      <Text style={[styles.pairItemTxt, isSelected && styles.pairItemTxtOn]}>{pair.label}</Text>
+                      {isSelected && <MaterialIcons name="check" size={9} color={Colors.bg} />}
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </View>
+          ))}
         </LinearGradient>
 
         {/* About */}
@@ -207,31 +186,31 @@ export default function SettingsScreen() {
             <Text style={styles.cardTitle}>About</Text>
           </View>
           {[
-            ['App Name', 'Super-Binary-Analyser'],
-            ['Version', 'v2.0.0'],
+            ['App', 'Super-Binary-Analyser v3.0'],
+            ['Engine', '15+ Indicator Confluence'],
             ['Owner', 'Amirul_Adnan'],
             ['Telegram', '@amirul_adnan_trader'],
             ['Signal Type', '1-Minute Binary Options'],
-            ['Engine', '8-Indicator Confluence'],
             ['Timezone', 'Bangladesh (UTC+6)'],
-            ['PIN', '██████ Protected'],
-          ].map(([label, value]) => (
-            <View key={label} style={styles.aboutRow}>
-              <Text style={styles.aboutLabel}>{label}</Text>
-              <Text style={[styles.aboutValue, label === 'Telegram' && { color: Colors.blue }]}>{value}</Text>
+            ['Protection', 'PIN 6-digit Lock'],
+            ['Chart', 'TradingView Live + Analysis Mode'],
+          ].map(([lbl, val]) => (
+            <View key={lbl} style={styles.aboutRow}>
+              <Text style={styles.aboutLabel}>{lbl}</Text>
+              <Text style={[styles.aboutVal, lbl === 'Telegram' && { color: Colors.blue }]}>{val}</Text>
             </View>
           ))}
         </LinearGradient>
 
         {/* Danger Zone */}
-        <LinearGradient colors={[`${Colors.sell}08`, '#0d1117']} style={[styles.card, { borderColor: `${Colors.sell}25` }]}>
+        <LinearGradient colors={[`${Colors.sell}08`, '#0d1117']} style={[styles.card, { borderColor: `${Colors.sell}22` }]}>
           <View style={styles.cardHeader}>
             <MaterialIcons name="warning" size={18} color={Colors.sell} />
             <Text style={[styles.cardTitle, { color: Colors.sell }]}>Danger Zone</Text>
           </View>
           <TouchableOpacity style={styles.dangerBtn} onPress={handleClearAll} activeOpacity={0.8}>
-            <MaterialIcons name="delete-forever" size={18} color={Colors.sell} />
-            <Text style={styles.dangerBtnText}>Clear All Data & Caches</Text>
+            <MaterialIcons name="delete-forever" size={16} color={Colors.sell} />
+            <Text style={styles.dangerBtnTxt}>Clear All Data & Reset Caches</Text>
           </TouchableOpacity>
         </LinearGradient>
 
@@ -240,22 +219,31 @@ export default function SettingsScreen() {
   );
 }
 
+function ValidBadge({ ok }: { ok: boolean }) {
+  return (
+    <View style={[styles.validBadge, { backgroundColor: ok ? `${Colors.buy}15` : `${Colors.sell}15`, borderColor: ok ? `${Colors.buy}30` : `${Colors.sell}30` }]}>
+      <MaterialIcons name={ok ? 'check-circle' : 'error'} size={11} color={ok ? Colors.buy : Colors.sell} />
+      <Text style={[styles.validTxt, { color: ok ? Colors.buy : Colors.sell }]}>{ok ? 'Active' : 'Invalid'}</Text>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.bg },
-  scroll: { gap: Spacing.md, paddingBottom: 36 },
+  scroll: { gap: Spacing.md, paddingBottom: 40 },
   header: {
     flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
     paddingHorizontal: Spacing.base, paddingVertical: Spacing.md,
     borderBottomWidth: 1, borderBottomColor: Colors.border,
   },
   headerTitle: { fontSize: Fonts.sizes.lg, color: Colors.textPrimary, fontWeight: Fonts.weights.bold, flex: 1 },
-  apiActiveBadge: {
-    flexDirection: 'row', alignItems: 'center', gap: 3,
-    backgroundColor: `${Colors.buy}15`, borderRadius: 5,
-    paddingHorizontal: 8, paddingVertical: 3,
-    borderWidth: 1, borderColor: `${Colors.buy}30`,
+  liveChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: `${Colors.buy}15`, borderRadius: Radius.full,
+    paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1, borderColor: `${Colors.buy}30`,
   },
-  apiActiveTxt: { fontSize: 10, color: Colors.buy, fontWeight: Fonts.weights.black },
+  liveDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: Colors.buy },
+  liveTxt: { fontSize: 10, color: Colors.buy, fontWeight: Fonts.weights.black },
   logoSection: { alignItems: 'center', paddingVertical: Spacing.xl },
   card: {
     marginHorizontal: Spacing.base, borderRadius: Radius.xl,
@@ -267,10 +255,14 @@ const styles = StyleSheet.create({
   cardDesc: { fontSize: Fonts.sizes.sm, color: Colors.textSecondary, lineHeight: 20 },
   validBadge: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
-    backgroundColor: `${Colors.buy}15`, paddingHorizontal: 8, paddingVertical: 3,
-    borderRadius: Radius.full,
+    paddingHorizontal: 8, paddingVertical: 3, borderRadius: Radius.full, borderWidth: 1,
   },
-  validText: { fontSize: 11, color: Colors.buy, fontWeight: Fonts.weights.bold },
+  validTxt: { fontSize: 10, fontWeight: Fonts.weights.bold },
+  v3Badge: {
+    backgroundColor: `${Colors.blue}20`, borderRadius: Radius.full,
+    paddingHorizontal: 7, paddingVertical: 2, borderWidth: 1, borderColor: `${Colors.blue}40`,
+  },
+  v3Txt: { fontSize: 9, color: Colors.blue, fontWeight: Fonts.weights.black },
   keyInputRow: {
     flexDirection: 'row', alignItems: 'center',
     backgroundColor: Colors.bgInput, borderRadius: Radius.md,
@@ -285,29 +277,29 @@ const styles = StyleSheet.create({
   saveBtnGrad: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.sm, paddingVertical: Spacing.md },
   saveBtnText: { fontSize: Fonts.sizes.base, color: Colors.bg, fontWeight: Fonts.weights.bold },
   creditNote: { flexDirection: 'row', gap: 6, alignItems: 'flex-start' },
-  creditNoteText: { fontSize: 11, color: Colors.textMuted, flex: 1, lineHeight: 16 },
-  configRow: {
-    borderBottomWidth: 1, borderBottomColor: Colors.border, paddingVertical: Spacing.xs, gap: 3,
-  },
+  creditTxt: { fontSize: 11, color: Colors.textMuted, flex: 1, lineHeight: 16 },
+  configRow: { borderBottomWidth: 1, borderBottomColor: Colors.border, paddingVertical: Spacing.xs, gap: 2 },
   configLabel: { fontSize: Fonts.sizes.xs, color: Colors.textMuted, fontWeight: Fonts.weights.semibold },
-  configValue: { fontSize: Fonts.sizes.xs, color: Colors.textSecondary, lineHeight: 16 },
-  pairsList: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
+  configVal: { fontSize: Fonts.sizes.xs, color: Colors.textSecondary, lineHeight: 16 },
+  pairGroup: { gap: Spacing.xs },
+  pairGroupTitle: { fontSize: Fonts.sizes.xs, color: Colors.gold, fontWeight: Fonts.weights.bold, letterSpacing: 0.8 },
+  pairsList: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.xs },
   pairItem: {
-    flexDirection: 'row', alignItems: 'center', gap: 4,
-    paddingHorizontal: Spacing.md, paddingVertical: Spacing.xs,
+    flexDirection: 'row', alignItems: 'center', gap: 3,
+    paddingHorizontal: Spacing.sm, paddingVertical: 5,
     borderRadius: Radius.full, borderWidth: 1, borderColor: Colors.border,
-    backgroundColor: Colors.bgCard,
+    backgroundColor: Colors.bgCard, overflow: 'hidden',
   },
-  pairItemOn: { backgroundColor: Colors.gold, borderColor: Colors.gold },
-  pairItemText: { fontSize: Fonts.sizes.sm, color: Colors.textSecondary, fontWeight: Fonts.weights.medium },
-  pairItemTextOn: { color: Colors.bg, fontWeight: Fonts.weights.bold },
-  aboutRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 4 },
+  pairItemOn: { borderColor: Colors.gold },
+  pairItemTxt: { fontSize: Fonts.sizes.xs, color: Colors.textSecondary, fontWeight: Fonts.weights.medium },
+  pairItemTxtOn: { color: Colors.bg, fontWeight: Fonts.weights.bold },
+  aboutRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 3 },
   aboutLabel: { fontSize: Fonts.sizes.sm, color: Colors.textMuted },
-  aboutValue: { fontSize: Fonts.sizes.sm, color: Colors.textSecondary, fontWeight: Fonts.weights.medium },
+  aboutVal: { fontSize: Fonts.sizes.sm, color: Colors.textSecondary, fontWeight: Fonts.weights.medium },
   dangerBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.sm,
     paddingVertical: Spacing.md, borderRadius: Radius.md,
     backgroundColor: `${Colors.sell}10`, borderWidth: 1, borderColor: `${Colors.sell}35`,
   },
-  dangerBtnText: { fontSize: Fonts.sizes.base, color: Colors.sell, fontWeight: Fonts.weights.semibold },
+  dangerBtnTxt: { fontSize: Fonts.sizes.base, color: Colors.sell, fontWeight: Fonts.weights.semibold },
 });

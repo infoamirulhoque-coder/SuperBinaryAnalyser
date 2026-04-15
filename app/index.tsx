@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { View, StyleSheet, Animated } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -10,11 +10,7 @@ export default function IndexScreen() {
   const { isUnlocked, isLoading } = useApp();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const fadeAnim = React.useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    Animated.timing(fadeAnim, { toValue: 1, duration: 400, useNativeDriver: true }).start();
-  }, []);
+  const fadeAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     if (!isLoading && isUnlocked) {
@@ -22,13 +18,22 @@ export default function IndexScreen() {
     }
   }, [isUnlocked, isLoading]);
 
-  // Show loading state while AsyncStorage loads
+  useEffect(() => {
+    if (!isLoading) {
+      Animated.timing(fadeAnim, { toValue: 1, duration: 400, useNativeDriver: true }).start();
+    }
+  }, [isLoading]);
+
   if (isLoading) {
     return <View style={styles.loading} />;
   }
 
+  if (isUnlocked) {
+    return <View style={styles.loading} />;
+  }
+
   const handleUnlocked = () => {
-    setTimeout(() => router.replace('/(tabs)'), 80);
+    setTimeout(() => router.replace('/(tabs)'), 100);
   };
 
   return (

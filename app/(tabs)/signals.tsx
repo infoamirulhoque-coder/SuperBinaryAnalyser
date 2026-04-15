@@ -11,7 +11,7 @@ import { useApp } from '@/contexts/AppContext';
 import { Signal } from '@/services/signalEngine';
 import { useAlert } from '@/template';
 
-const FILTERS = ['ALL', 'BUY', 'SELL', 'WAIT'];
+const FILTERS = ['ALL', 'BUY', 'SELL', 'WAIT', 'STRONG', 'SAFE'];
 
 export default function SignalsScreen() {
   const insets = useSafeAreaInsets();
@@ -20,17 +20,32 @@ export default function SignalsScreen() {
   const [filter, setFilter] = useState('ALL');
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const headerSlide = useRef(new Animated.Value(-20)).current;
-  const statsScale = useRef(new Animated.Value(0.9)).current;
+  const statsScale = useRef(new Animated.Value(0.92)).current;
+  const pulseAnim = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
     Animated.parallel([
-      Animated.timing(fadeAnim, { toValue: 1, duration: 500, useNativeDriver: true }),
+      Animated.timing(fadeAnim, { toValue: 1, duration: 450, useNativeDriver: true }),
       Animated.spring(headerSlide, { toValue: 0, tension: 80, friction: 10, useNativeDriver: true }),
       Animated.spring(statsScale, { toValue: 1, tension: 70, friction: 8, useNativeDriver: true }),
     ]).start();
-  }, []);
 
-  const filtered = filter === 'ALL' ? signals : signals.filter((s) => s.type === filter);
+    if (isSignalRunning) {
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseAnim, { toValue: 1.08, duration: 900, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+          Animated.timing(pulseAnim, { toValue: 1, duration: 900, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+        ])
+      ).start();
+    }
+  }, [isSignalRunning]);
+
+  const filtered = signals.filter(s => {
+    if (filter === 'ALL') return true;
+    if (filter === 'STRONG') return s.strength === 'STRONG';
+    if (filter === 'SAFE') return s.safeSignal;
+    return s.type === filter;
+  });
 
   const handleClear = () => {
     showAlert('Clear All Signals', 'Remove all signal history?', [
@@ -39,10 +54,19 @@ export default function SignalsScreen() {
     ]);
   };
 
-  const buyCount = signals.filter((s) => s.type === 'BUY').length;
-  const sellCount = signals.filter((s) => s.type === 'SELL').length;
-  const safeCount = signals.filter((s) => s.safeSignal).length;
-  const strongCount = signals.filter((s) => s.strength === 'STRONG').length;
+  const buyCount = signals.filter(s => s.type === 'BUY').length;
+  const sellCount = signals.filter(s => s.type === 'SELL').length;
+  const safeCount = signals.filter(s => s.safeSignal).length;
+  const strongCount = signals.filter(s => s.strength === 'STRONG').length;
+  const perfectCount = signals.filter(s => (s as any).entryQuality === 'PERFECT').length;
+
+  const filterColor = (f: string) => {
+    if (f === 'BUY' || f === 'SAFE') return Colors.buy;
+    if (f === 'SELL') return Colors.sell;
+    if (f === 'STRONG') return Colors.gold;
+    if (f === 'WAIT') return Colors.wait;
+    return Colors.textSecondary;
+  };
 
   const renderSignal = ({ item, index }: { item: Signal; index: number }) => (
     <SignalCard signal={item} isLatest={index === 0 && filter === 'ALL'} />
@@ -54,14 +78,22 @@ export default function SignalsScreen() {
       <Animated.View style={{ transform: [{ translateY: headerSlide }] }}>
         <LinearGradient colors={['#0a0d16', Colors.bg]} style={styles.header}>
           <View style={styles.headerLeft}>
-            <MaterialIcons name="bolt" size={22} color={Colors.gold} />
+            <Animated.View style={{ transform: [{ scale: isSignalRunning ? pulseAnim : 1 }] }}>
+              <MaterialIcons name="bolt" size={22} color={isSignalRunning ? Colors.buy : Colors.gold} />
+            </Animated.View>
             <Text style={styles.headerTitle}>Signal History</Text>
           </View>
           <View style={styles.headerRight}>
             {isWeekendLocked && (
               <View style={styles.weekendBadge}>
-                <MaterialIcons name="lock" size={12} color={Colors.sell} />
+                <MaterialIcons name="lock" size={11} color={Colors.sell} />
                 <Text style={styles.weekendBadgeText}>WEEKEND</Text>
+              </View>
+            )}
+            {isSignalRunning && (
+              <View style={styles.liveBadge}>
+                <Animated.View style={[styles.liveDot, { transform: [{ scale: pulseAnim }] }]} />
+                <Text style={styles.liveBadgeText}>LIVE</Text>
               </View>
             )}
             <TouchableOpacity onPress={handleClear} style={styles.clearBtn} activeOpacity={0.8}>
@@ -80,62 +112,63 @@ export default function SignalsScreen() {
           <View style={styles.statDivider} />
           <StatBlock value={sellCount} label="SELL" color={Colors.sell} />
           <View style={styles.statDivider} />
-          <StatBlock value={safeCount} label="SAFE" color={Colors.blue} />
-          <View style={styles.statDivider} />
           <StatBlock value={strongCount} label="STRONG" color={Colors.gold} />
           <View style={styles.statDivider} />
-          <View style={styles.engineBlock}>
-            <View style={[styles.engineDot, { backgroundColor: isSignalRunning ? Colors.buy : Colors.textMuted }]} />
-            <Text style={[styles.engineLabel, { color: isSignalRunning ? Colors.buy : Colors.textMuted }]}>
-              {isSignalRunning ? 'LIVE' : 'OFF'}
-            </Text>
-          </View>
+          <StatBlock value={safeCount} label="SAFE" color={Colors.blue} />
+          <View style={styles.statDivider} />
+          <StatBlock value={perfectCount} label="PERFECT" color={Colors.purple} />
         </LinearGradient>
       </Animated.View>
 
       {/* Filter tabs */}
-      <View style={styles.filterRow}>
-        {FILTERS.map((f, i) => {
-          const color = f === 'BUY' ? Colors.buy : f === 'SELL' ? Colors.sell : f === 'WAIT' ? Colors.wait : Colors.gold;
-          const isActive = filter === f;
-          return (
-            <TouchableOpacity
-              key={f}
-              style={[styles.filterTab, isActive && { borderColor: color, backgroundColor: `${color}12` }]}
-              onPress={() => setFilter(f)}
-              activeOpacity={0.8}
-            >
-              <Text style={[styles.filterText, isActive && { color }]}>{f}</Text>
-              {isActive && (
-                <View style={[styles.filterDot, { backgroundColor: color }]} />
-              )}
-            </TouchableOpacity>
-          );
-        })}
+      <View style={styles.filterContainer}>
+        <FlatList
+          data={FILTERS}
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          keyExtractor={item => item}
+          contentContainerStyle={styles.filterRow}
+          renderItem={({ item: f }) => {
+            const isActive = filter === f;
+            const color = filterColor(f);
+            return (
+              <TouchableOpacity
+                style={[styles.filterTab, isActive && { borderColor: color, backgroundColor: `${color}12` }]}
+                onPress={() => setFilter(f)}
+                activeOpacity={0.8}
+              >
+                <Text style={[styles.filterText, isActive && { color }]}>{f}</Text>
+                {isActive && <View style={[styles.filterDot, { backgroundColor: color }]} />}
+              </TouchableOpacity>
+            );
+          }}
+        />
       </View>
 
       {/* Signal list or empty state */}
       {filtered.length === 0 ? (
         <View style={styles.empty}>
-          <MaterialIcons name="bolt" size={72} color={`${Colors.textMuted}50`} />
-          <Text style={styles.emptyTitle}>No Signals Yet</Text>
+          <MaterialIcons name="bolt" size={72} color={`${Colors.textMuted}40`} />
+          <Text style={styles.emptyTitle}>No Signals</Text>
           <Text style={styles.emptyText}>
             {isWeekendLocked
-              ? '🔒 Market closed on weekends. Engine unlocks Sunday 21:00 UTC.'
+              ? '🔒 Market closed on weekends.\nEngine unlocks Sunday 21:00 UTC.'
               : isSignalRunning
-              ? 'Engine is live — first signal arrives within 62 seconds...'
-              : 'Start the Signal Engine on Dashboard to receive 1-min signals'}
+              ? 'Engine is live — signals arrive within 62 seconds...'
+              : filter === 'ALL'
+              ? 'Start the Signal Engine on Dashboard to receive live signals'
+              : `No ${filter} signals in history. Try a different filter.`}
           </Text>
         </View>
       ) : (
         <FlatList
           data={filtered}
-          keyExtractor={(item) => item.id}
+          keyExtractor={item => item.id}
           renderItem={renderSignal}
           contentContainerStyle={styles.list}
           showsVerticalScrollIndicator={false}
-          initialNumToRender={10}
-          maxToRenderPerBatch={10}
+          initialNumToRender={8}
+          maxToRenderPerBatch={8}
           removeClippedSubviews
         />
       )}
@@ -169,30 +202,33 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: `${Colors.sell}30`,
   },
   weekendBadgeText: { fontSize: 9, color: Colors.sell, fontWeight: Fonts.weights.black },
+  liveBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: `${Colors.buy}15`, borderRadius: 5,
+    paddingHorizontal: 7, paddingVertical: 3,
+    borderWidth: 1, borderColor: `${Colors.buy}30`,
+  },
+  liveDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: Colors.buy },
+  liveBadgeText: { fontSize: 9, color: Colors.buy, fontWeight: Fonts.weights.black },
   clearBtn: { padding: 4 },
   statsBanner: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around',
-    paddingVertical: Spacing.md, borderBottomWidth: 1, borderBottomColor: Colors.border,
-    paddingHorizontal: Spacing.sm,
+    paddingVertical: Spacing.sm, borderBottomWidth: 1, borderBottomColor: Colors.border,
+    paddingHorizontal: Spacing.xs,
   },
-  statItem: { alignItems: 'center', gap: 1 },
-  statNum: { fontSize: Fonts.sizes.xl, fontWeight: Fonts.weights.black },
-  statLbl: { fontSize: 9, color: Colors.textMuted, letterSpacing: 0.3 },
+  statItem: { alignItems: 'center', gap: 1, flex: 1 },
+  statNum: { fontSize: 16, fontWeight: Fonts.weights.black },
+  statLbl: { fontSize: 8, color: Colors.textMuted, letterSpacing: 0.3 },
   statDivider: { width: 1, height: 28, backgroundColor: Colors.border },
-  engineBlock: { alignItems: 'center', gap: 2 },
-  engineDot: { width: 8, height: 8, borderRadius: 4 },
-  engineLabel: { fontSize: 9, fontWeight: Fonts.weights.black },
-  filterRow: {
-    flexDirection: 'row', gap: Spacing.sm,
-    paddingHorizontal: Spacing.base, paddingVertical: Spacing.sm,
-  },
+  filterContainer: { borderBottomWidth: 1, borderBottomColor: Colors.border },
+  filterRow: { flexDirection: 'row', gap: Spacing.sm, paddingHorizontal: Spacing.base, paddingVertical: Spacing.sm },
   filterTab: {
-    flex: 1, paddingVertical: Spacing.sm, alignItems: 'center',
-    borderRadius: Radius.md, borderWidth: 1, borderColor: Colors.border,
-    backgroundColor: Colors.bgCard, gap: 3,
+    paddingHorizontal: Spacing.md, paddingVertical: Spacing.xs, alignItems: 'center',
+    borderRadius: Radius.full, borderWidth: 1, borderColor: Colors.border,
+    backgroundColor: Colors.bgCard, gap: 3, flexDirection: 'row',
   },
-  filterText: { fontSize: Fonts.sizes.sm, color: Colors.textMuted, fontWeight: Fonts.weights.semibold },
-  filterDot: { width: 4, height: 4, borderRadius: 2 },
+  filterText: { fontSize: Fonts.sizes.xs, color: Colors.textMuted, fontWeight: Fonts.weights.semibold },
+  filterDot: { width: 5, height: 5, borderRadius: 2.5 },
   list: { padding: Spacing.base, paddingBottom: 32 },
   empty: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: Spacing.md, padding: Spacing.xl },
   emptyTitle: { fontSize: Fonts.sizes.xl, color: Colors.textSecondary, fontWeight: Fonts.weights.bold },
